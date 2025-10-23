@@ -33,8 +33,8 @@ class AlignApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("SRT Dub Aligner")
-        self.geometry("720x520")
-        self.minsize(680, 480)
+        self.geometry("760x560")
+        self.minsize(720, 520)
 
         # State
         self._log_queue = queue.Queue()
@@ -47,6 +47,9 @@ class AlignApp(tk.Tk):
         self.var_sr = tk.StringVar(value="Auto")
         self.var_fade = tk.DoubleVar(value=8.0)
         self.var_fade_text = tk.StringVar(value=f"{int(self.var_fade.get())} ms")
+        # Save converted clips
+        self.var_save_converted = tk.BooleanVar(value=False)
+        self.var_save_dir = tk.StringVar()
         # Video dubbing
         self.var_video = tk.StringVar()
         self.var_video_out = tk.StringVar()
@@ -66,23 +69,28 @@ class AlignApp(tk.Tk):
         # SRT
         row = 0
         ttk.Label(frm, text="Subtitle (.srt)").grid(row=row, column=0, sticky="w", **pad)
-        e_srt = ttk.Entry(frm, textvariable=self.var_srt)
-        e_srt.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Entry(frm, textvariable=self.var_srt).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Browse...", command=self._choose_srt).grid(row=row, column=2, **pad)
 
         # Audio dir
         row += 1
-        ttk.Label(frm, text="Dubs Folder (WAVs)").grid(row=row, column=0, sticky="w", **pad)
-        e_dir = ttk.Entry(frm, textvariable=self.var_audio_dir)
-        e_dir.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Label(frm, text="Dubs Folder (Audio)").grid(row=row, column=0, sticky="w", **pad)
+        ttk.Entry(frm, textvariable=self.var_audio_dir).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Browse...", command=self._choose_audio_dir).grid(row=row, column=2, **pad)
 
         # Output wav
         row += 1
         ttk.Label(frm, text="Output WAV").grid(row=row, column=0, sticky="w", **pad)
-        e_out = ttk.Entry(frm, textvariable=self.var_out)
-        e_out.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Entry(frm, textvariable=self.var_out).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Save As...", command=self._choose_out).grid(row=row, column=2, **pad)
+
+        # Converted WAV destination
+        row += 1
+        save_frame = ttk.Frame(frm)
+        save_frame.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
+        ttk.Checkbutton(save_frame, text="Save converted clips as WAV", variable=self.var_save_converted).pack(side=tk.LEFT)
+        ttk.Entry(save_frame, textvariable=self.var_save_dir, width=40).pack(side=tk.LEFT, padx=(10, 6), fill=tk.X, expand=True)
+        ttk.Button(save_frame, text="Folder...", command=self._choose_save_dir).pack(side=tk.LEFT)
 
         # Sample rate and fade
         row += 1
@@ -94,26 +102,22 @@ class AlignApp(tk.Tk):
 
         row += 1
         ttk.Label(frm, text="Fade (ms)").grid(row=row, column=0, sticky="w", **pad)
-        fade = ttk.Scale(frm, from_=0, to=50, orient=tk.HORIZONTAL, variable=self.var_fade,
-                         command=lambda val: self.var_fade_text.set(f"{int(float(val))} ms"))
-        fade.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Scale(frm, from_=0, to=50, orient=tk.HORIZONTAL, variable=self.var_fade,
+                  command=lambda val: self.var_fade_text.set(f"{int(float(val))} ms")).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Label(frm, textvariable=self.var_fade_text).grid(row=row, column=2, sticky="w", **pad)
 
         # Video dubbing section
         row += 1
-        sep = ttk.Separator(frm)
-        sep.grid(row=row, column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 2))
+        ttk.Separator(frm).grid(row=row, column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 2))
 
         row += 1
         ttk.Label(frm, text="Main Video (English)").grid(row=row, column=0, sticky="w", **pad)
-        e_vid = ttk.Entry(frm, textvariable=self.var_video)
-        e_vid.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Entry(frm, textvariable=self.var_video).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Browse...", command=self._choose_video).grid(row=row, column=2, **pad)
 
         row += 1
         ttk.Label(frm, text="Dubbed Video Output").grid(row=row, column=0, sticky="w", **pad)
-        e_vout = ttk.Entry(frm, textvariable=self.var_video_out)
-        e_vout.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Entry(frm, textvariable=self.var_video_out).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Save As...", command=self._choose_video_out).grid(row=row, column=2, **pad)
 
         row += 1
@@ -121,13 +125,12 @@ class AlignApp(tk.Tk):
         mode_frame = ttk.Frame(frm)
         mode_frame.grid(row=row, column=1, columnspan=2, sticky="w", **pad)
         ttk.Radiobutton(mode_frame, text="Replace original audio", value="replace", variable=self.var_audio_mode).pack(side=tk.LEFT)
-        ttk.Radiobutton(mode_frame, text="Mix with original (background)", value="mix", variable=self.var_audio_mode).pack(side=tk.LEFT, padx=(10,0))
+        ttk.Radiobutton(mode_frame, text="Mix with original (background)", value="mix", variable=self.var_audio_mode).pack(side=tk.LEFT, padx=(10, 0))
 
         row += 1
         ttk.Label(frm, text="BG volume (mix)").grid(row=row, column=0, sticky="w", **pad)
-        bg = ttk.Scale(frm, from_=0, to=100, orient=tk.HORIZONTAL, variable=self.var_bg_vol,
-                       command=lambda val: self.var_bg_vol_text.set(f"{int(float(val))}%"))
-        bg.grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Scale(frm, from_=0, to=100, orient=tk.HORIZONTAL, variable=self.var_bg_vol,
+                  command=lambda val: self.var_bg_vol_text.set(f"{int(float(val))}%")).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Label(frm, textvariable=self.var_bg_vol_text).grid(row=row, column=2, sticky="w", **pad)
 
         # Actions
@@ -180,9 +183,22 @@ class AlignApp(tk.Tk):
             self.var_out.set(os.path.join(out_dir, "aligned_dub.wav"))
 
     def _choose_audio_dir(self):
-        path = filedialog.askdirectory(title="Choose dubs folder (WAVs)")
+        path = filedialog.askdirectory(title="Choose dubs folder (Audio)")
         if path:
             self.var_audio_dir.set(path)
+            # If folder contains non-WAV audio, suggest saving converted WAVs
+            try:
+                exts = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".wma"}
+                has_non_wav = any(
+                    (os.path.splitext(fn)[1].lower() in exts) and (os.path.splitext(fn)[1].lower() != ".wav")
+                    for fn in os.listdir(path)
+                )
+                if has_non_wav:
+                    if not self.var_save_dir.get().strip():
+                        self.var_save_dir.set(os.path.join(path, "converted_wav"))
+                    self.var_save_converted.set(True)
+            except Exception:
+                pass
 
     def _choose_out(self):
         initial = self.var_out.get() or "aligned_dub.wav"
@@ -194,6 +210,16 @@ class AlignApp(tk.Tk):
         )
         if path:
             self.var_out.set(path)
+
+    def _choose_save_dir(self):
+        initial_dir = None
+        if self.var_save_dir.get().strip():
+            initial_dir = self.var_save_dir.get().strip()
+        elif self.var_audio_dir.get().strip():
+            initial_dir = os.path.join(self.var_audio_dir.get().strip(), "converted_wav")
+        path = filedialog.askdirectory(title="Choose folder to save converted WAV clips", initialdir=initial_dir)
+        if path:
+            self.var_save_dir.set(path)
 
     def _choose_video(self):
         path = filedialog.askopenfilename(
@@ -247,7 +273,7 @@ class AlignApp(tk.Tk):
             messagebox.showerror("Missing SRT", "Please select a valid .srt file.")
             return
         if not audio_dir or not os.path.isdir(audio_dir):
-            messagebox.showerror("Missing Dubs Folder", "Please select a valid folder with WAV clips.")
+            messagebox.showerror("Missing Dubs Folder", "Please select a valid folder with audio clips (mp3/wav/...).")
             return
         if not out:
             messagebox.showerror("Missing Output", "Please choose an output WAV path.")
@@ -269,6 +295,7 @@ class AlignApp(tk.Tk):
                         output_wav=out,
                         sample_rate=sr,
                         fade_ms=fade_ms,
+                        write_wav_dir=(self.var_save_dir.get().strip() if self.var_save_converted.get() else None),
                     )
             except Exception as e:
                 ok = False
@@ -327,7 +354,7 @@ class AlignApp(tk.Tk):
             try:
                 # 1) Align if needed
                 if need_align:
-                    self._log_queue.put("[INFO] Aligned WAV not found — generating...\n")
+                    self._log_queue.put("[INFO] Aligned WAV not found - generating...\n")
                     sr_raw = self.var_sr.get().strip()
                     sr = None if sr_raw.lower() == "auto" else int(sr_raw)
                     fade_ms = float(self.var_fade.get())
@@ -338,6 +365,7 @@ class AlignApp(tk.Tk):
                             output_wav=out_wav,
                             sample_rate=sr,
                             fade_ms=fade_ms,
+                            write_wav_dir=(self.var_save_dir.get().strip() if self.var_save_converted.get() else None),
                         )
                     except Exception as e:
                         self._log_queue.put(f"\n[ERROR] Alignment failed: {e}\n")
@@ -400,3 +428,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

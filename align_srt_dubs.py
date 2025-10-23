@@ -223,6 +223,7 @@ def align_dubs_to_srt(
     output_wav: str,
     sample_rate: Optional[int] = None,
     fade_ms: float = 8.0,
+    write_wav_dir: Optional[str] = None,
 ) -> None:
     """
     Align dubbed audio clips to SRT timings.
@@ -265,6 +266,10 @@ def align_dubs_to_srt(
     total_samples = int(round(sample_rate * (total_ms / 1000.0)))
     accum = array('i', [0] * (total_samples + 1))  # +1 to be safe for boundary
 
+    # If requested, prepare directory to persist converted WAV clips
+    if write_wav_dir:
+        os.makedirs(write_wav_dir, exist_ok=True)
+
     # Process each entry
     missing = 0
     for e in entries:
@@ -277,6 +282,15 @@ def align_dubs_to_srt(
         tmp, sr, created = _decode_to_tmp_wav(clip_path, target_sr=sample_rate)
         if created:
             temp_to_cleanup.append(tmp)
+        # Optionally persist the converted source WAV for user
+        if write_wav_dir:
+            persist_path = os.path.join(write_wav_dir, f"{e.index}.wav")
+            try:
+                src_for_copy = tmp if created else clip_path
+                # Overwrite if exists to keep consistent sample rate
+                shutil.copyfile(src_for_copy, persist_path)
+            except Exception as copy_err:
+                print(f"[WARN] Could not write converted WAV for index {e.index}: {copy_err}")
         clip, sr = _read_wav_mono_16bit(tmp)
         if sr != sample_rate:
             raise ValueError(f"Unexpected sample rate after decode for {clip_path}: {sr} != {sample_rate}")
@@ -323,6 +337,7 @@ def main():
     p.add_argument("--audio-dir", required=True, help="Directory with clips (wav/mp3/..., e.g., 1.wav or 1.mp3)")
     p.add_argument("--out", required=True, help="Output WAV path for aligned dub track")
     p.add_argument("--sr", type=int, default=None, help="Target sample rate; defaults to first found clip's rate")
+    p.add_argument("--write-wav-dir", default=None, help="If set, save each decoded clip as WAV into this folder before aligning")
     p.add_argument("--fade-ms", type=float, default=8.0, help="Fade in/out per clip in milliseconds (default 8ms)")
     args = p.parse_args()
 
@@ -332,6 +347,7 @@ def main():
         output_wav=args.out,
         sample_rate=args.sr,
         fade_ms=args.fade_ms,
+        write_wav_dir=args.write_wav_dir,
     )
 
 
